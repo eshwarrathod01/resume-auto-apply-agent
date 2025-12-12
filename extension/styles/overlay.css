@@ -1,0 +1,57 @@
+/* Overlay styles for content scripts */
+
+.auto-apply-notification {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  padding: 12px 20px;
+  background: #1a1a2e;
+  color: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 999999;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 14px;
+  animation: slideIn 0.3s ease-out;
+}
+
+.auto-apply-notification.auto-apply-success {
+  background: #27ae60;
+}
+
+.auto-apply-notification.auto-apply-error {
+  background: #e74c3c;
+}
+
+.auto-apply-notification.auto-apply-info {
+  background: #4361ee;
+}
+
+.auto-apply-icon {
+  font-size: 18px;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+/* Highlight filled fields */
+.auto-apply-filled {
+  outline: 2px solid #27ae60 !important;
+  outline-offset: 2px;
+}
+
+.auto-apply-error-field {
+  outline: 2px solid #e74c3c !important;
+  outline-offset: 2px;
+}
