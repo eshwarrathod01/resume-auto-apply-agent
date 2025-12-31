@@ -9,3 +9,14 @@ Thumbs.db
 *.pem
 *.key
 extension/*.zip
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+*.so
+.venv/
+venv/
+ENV/
+.streamlit/secrets.toml
