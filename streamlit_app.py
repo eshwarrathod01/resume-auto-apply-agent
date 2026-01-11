@@ -23,7 +23,7 @@ st.set_page_config(
 st.markdown("""
 <style>
     .main-header {
-        font-size: 2.5rem;
+        font-size: 2.5rem;   
         font-weight: bold;
         background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
         -webkit-background-clip: text;
@@ -119,34 +119,146 @@ def generate_application_script(platform, profile, job_url):
     
     scripts = {
         'Lever': f'''
-// Lever Auto-Fill Script
+// Lever Auto-Fill Script (Enhanced for Ekimetrics and similar forms)
 // Paste this in browser console on: {job_url}
 
-(function() {{
+(async function() {{
     const profile = {json.dumps(profile, indent=2)};
     
-    // Fill basic fields
-    const fieldMappings = {{
-        'input[name="name"]': profile.firstName + ' ' + profile.lastName,
-        'input[name="email"]': profile.email,
-        'input[name="phone"]': profile.phone,
-        'input[name="urls[LinkedIn]"]': profile.linkedin,
-        'input[name="urls[Portfolio]"]': profile.portfolio,
-        'input[name="urls[GitHub]"]': profile.portfolio,
-        'input[name="org"]': profile.currentCompany,
-    }};
+    // Helper functions
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     
-    for (const [selector, value] of Object.entries(fieldMappings)) {{
+    const fillField = async (selector, value) => {{
         const el = document.querySelector(selector);
         if (el && value) {{
+            el.focus();
             el.value = value;
             el.dispatchEvent(new Event('input', {{ bubbles: true }}));
             el.dispatchEvent(new Event('change', {{ bubbles: true }}));
+            await sleep(100);
+            return true;
         }}
+        return false;
+    }};
+    
+    const selectRadioByText = async (container, text) => {{
+        const radios = container.querySelectorAll('input[type="radio"]');
+        for (const radio of radios) {{
+            const label = radio.closest('label') || radio.parentElement;
+            if (label && label.textContent.toLowerCase().includes(text.toLowerCase())) {{
+                radio.click();
+                await sleep(100);
+                return true;
+            }}
+        }}
+        return false;
+    }};
+    
+    const selectCheckboxByText = async (container, texts) => {{
+        const checkboxes = container.querySelectorAll('input[type="checkbox"]');
+        const textArr = Array.isArray(texts) ? texts : [texts];
+        for (const checkbox of checkboxes) {{
+            const label = checkbox.closest('label') || checkbox.parentElement;
+            if (label) {{
+                for (const text of textArr) {{
+                    if (label.textContent.toLowerCase().includes(text.toLowerCase()) && !checkbox.checked) {{
+                        checkbox.click();
+                        await sleep(100);
+                    }}
+                }}
+            }}
+        }}
+    }};
+    
+    const findQuestionByText = (searchText) => {{
+        const labels = document.querySelectorAll('label, h3, h4, legend');
+        for (const label of labels) {{
+            if (label.textContent.toLowerCase().includes(searchText.toLowerCase())) {{
+                return label.closest('li, fieldset, .application-question, div');
+            }}
+        }}
+        return null;
+    }};
+    
+    // Fill basic fields
+    console.log('📝 Filling basic fields...');
+    await fillField('input[name="name"]', profile.firstName + ' ' + profile.lastName);
+    await fillField('input[name="email"]', profile.email);
+    await fillField('input[name="phone"]', profile.phone);
+    await fillField('input[name="location"]', profile.location);
+    await fillField('input[name="org"]', profile.currentCompany);
+    await fillField('input[name="urls[LinkedIn]"]', profile.linkedin);
+    await fillField('input[name="urls[Portfolio]"]', profile.portfolio);
+    await fillField('input[name="urls[GitHub]"]', profile.portfolio);
+    
+    // Fill text-based questions
+    console.log('📝 Filling application questions...');
+    
+    // Notice period
+    let q = findQuestionByText('notice period');
+    if (q) {{
+        const input = q.querySelector('input[type="text"], textarea');
+        if (input) {{ input.value = '2 weeks'; input.dispatchEvent(new Event('input', {{bubbles:true}})); }}
     }}
     
-    console.log('✅ Form auto-filled successfully!');
-    alert('Form fields have been filled. Please review and upload your resume manually.');
+    // Start date
+    q = findQuestionByText('start date');
+    if (q) {{
+        const input = q.querySelector('input[type="text"], textarea');
+        if (input) {{ input.value = 'Immediately available'; input.dispatchEvent(new Event('input', {{bubbles:true}})); }}
+    }}
+    
+    // Salary
+    q = findQuestionByText('salary');
+    if (q) {{
+        const input = q.querySelector('input[type="text"], textarea');
+        if (input) {{ input.value = '$75,000 - $85,000'; input.dispatchEvent(new Event('input', {{bubbles:true}})); }}
+    }}
+    
+    // Languages
+    q = findQuestionByText('languages');
+    if (q) await selectCheckboxByText(q, ['english']);
+    
+    // How did you hear
+    q = findQuestionByText('hear about');
+    if (q) {{
+        const input = q.querySelector('input[type="text"], textarea');
+        if (input) {{ input.value = 'Online Job Board'; input.dispatchEvent(new Event('input', {{bubbles:true}})); }}
+    }}
+    
+    // Visa status
+    q = findQuestionByText('visa') || findQuestionByText('require a visa');
+    if (q) await selectRadioByText(q, 'american citizen');
+    
+    // If visa type question
+    q = findQuestionByText('what visa');
+    if (q) {{
+        const input = q.querySelector('input[type="text"], textarea');
+        if (input) {{ input.value = 'N/A - US Citizen'; input.dispatchEvent(new Event('input', {{bubbles:true}})); }}
+    }}
+    
+    // Open to working in office
+    q = findQuestionByText('open to working');
+    if (q) await selectRadioByText(q, 'yes');
+    
+    // Coding language
+    q = findQuestionByText('coding language') || findQuestionByText('python or r');
+    if (q) await selectRadioByText(q, 'python');
+    
+    // Consent checkbox
+    q = findQuestionByText('consent') || findQuestionByText('retain');
+    if (q) {{
+        const checkbox = q.querySelector('input[type="checkbox"]');
+        if (checkbox && !checkbox.checked) checkbox.click();
+    }}
+    
+    console.log('✅ Form auto-filled! Please:');
+    console.log('1. Upload your resume');
+    console.log('2. Review all fields');
+    console.log('3. Complete any remaining questions');
+    console.log('4. Click Submit');
+    
+    alert('✅ Form auto-filled!\\n\\nPlease:\\n1. Upload your resume\\n2. Review all fields\\n3. Complete any remaining questions\\n4. Click Submit');
 }})();
 ''',
         'Greenhouse': f'''
