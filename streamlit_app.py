@@ -630,8 +630,6 @@ with tab1:
                 st.error("❌ Platform not recognized. Supported: Lever, Greenhouse, Workday, Glassdoor")
         else:
             st.error(f"❌ {job_result['error']}")
-        else:
-            st.error("❌ Platform not recognized. Supported platforms: Lever, Greenhouse, Workday, Glassdoor")
 
 with tab2:
     st.markdown("### 📊 Application Tracker")
