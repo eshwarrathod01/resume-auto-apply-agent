@@ -10,6 +10,7 @@ import re
 from datetime import datetime
 import requests
 from urllib.parse import urlparse
+from bs4 import BeautifulSoup
 
 # Page configuration
 st.set_page_config(
@@ -112,6 +113,118 @@ def extract_job_info(url):
         }
     except:
         return {'company': 'Unknown', 'job_id': 'Unknown', 'url': url}
+
+
+@st.cache_data(ttl=300)
+def fetch_job_details(url):
+    """Fetch and parse job details from the URL"""
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+        }
+        
+        response = requests.get(url, headers=headers, timeout=15)
+        response.raise_for_status()
+        
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Extract job details
+        job_data = {
+            'title': '',
+            'company': '',
+            'location': '',
+            'description': '',
+            'requirements': [],
+            'salary': '',
+            'job_type': '',
+            'questions': [],
+            'apply_url': url if '/apply' in url else url + '/apply'
+        }
+        
+        # Try to find job title
+        title_selectors = [
+            'h1', '.posting-headline h2', '.job-title', 
+            '[data-qa="job-title"]', '.position-title', 'h2'
+        ]
+        for selector in title_selectors:
+            el = soup.select_one(selector)
+            if el and el.get_text(strip=True):
+                job_data['title'] = el.get_text(strip=True)
+                break
+        
+        # Try to find company name
+        company_selectors = [
+            '.company-name', '[data-qa="company-name"]', 
+            '.posting-categories .location', 'a[href*="lever.co/"]'
+        ]
+        for selector in company_selectors:
+            el = soup.select_one(selector)
+            if el and el.get_text(strip=True):
+                job_data['company'] = el.get_text(strip=True)
+                break
+        
+        # Extract from URL if not found
+        if not job_data['company']:
+            parsed = urlparse(url)
+            if 'lever.co' in parsed.netloc:
+                parts = parsed.path.strip('/').split('/')
+                if parts:
+                    job_data['company'] = parts[0].replace('-', ' ').title()
+        
+        # Try to find location
+        location_selectors = [
+            '.location', '[data-qa="location"]', '.job-location',
+            '.posting-categories .sort-by-time'
+        ]
+        for selector in location_selectors:
+            el = soup.select_one(selector)
+            if el and el.get_text(strip=True):
+                job_data['location'] = el.get_text(strip=True)
+                break
+        
+        # Try to find job description
+        desc_selectors = [
+            '.posting-description', '.job-description', 
+            '[data-qa="job-description"]', '.description', 'article'
+        ]
+        for selector in desc_selectors:
+            el = soup.select_one(selector)
+            if el:
+                job_data['description'] = el.get_text(separator='\n', strip=True)[:2000]
+                break
+        
+        # Try to find salary
+        salary_pattern = r'\$[\d,]+(?:\s*-\s*\$[\d,]+)?(?:\s*(?:per|a|/)\s*(?:year|yr|annum|hour|hr))?'
+        salary_match = re.search(salary_pattern, response.text, re.IGNORECASE)
+        if salary_match:
+            job_data['salary'] = salary_match.group()
+        
+        # Detect application questions from apply page
+        if '/apply' not in url:
+            try:
+                apply_response = requests.get(url + '/apply', headers=headers, timeout=10)
+                if apply_response.status_code == 200:
+                    apply_soup = BeautifulSoup(apply_response.text, 'html.parser')
+                    
+                    # Find all labels/questions
+                    labels = apply_soup.select('label, .application-question h3, legend')
+                    for label in labels:
+                        text = label.get_text(strip=True)
+                        if text and len(text) > 3 and '?' in text or any(kw in text.lower() for kw in ['notice', 'salary', 'visa', 'sponsor', 'start date', 'language', 'hear about']):
+                            job_data['questions'].append(text)
+            except:
+                pass
+        
+        return {'success': True, 'data': job_data}
+        
+    except requests.exceptions.Timeout:
+        return {'success': False, 'error': 'Request timed out. The job page took too long to respond.'}
+    except requests.exceptions.RequestException as e:
+        return {'success': False, 'error': f'Failed to fetch job page: {str(e)}'}
+    except Exception as e:
+        return {'success': False, 'error': f'Error parsing job page: {str(e)}'}
 
 
 def generate_application_script(platform, profile, job_url):
@@ -409,82 +522,114 @@ with tab1:
             label_visibility="collapsed"
         )
     with col2:
-        analyze_btn = st.button("🔍 Analyze", use_container_width=True)
+        analyze_btn = st.button("🔍 Analyze Job", use_container_width=True)
     
     if job_url and analyze_btn:
         platform, icon = detect_platform(job_url)
-        job_info = extract_job_info(job_url)
+        
+        # Fetch actual job details
+        with st.spinner("🔍 Analyzing job posting..."):
+            job_result = fetch_job_details(job_url)
         
         st.markdown("---")
         
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Platform", f"{icon} {platform}")
-        with col2:
-            st.metric("Company", job_info['company'])
-        with col3:
-            st.metric("Status", "Ready to Apply")
-        
-        if platform != 'Unknown':
-            st.markdown("### 📝 Application Preview")
+        if job_result['success']:
+            job_data = job_result['data']
             
-            # Show profile summary
-            with st.expander("Your Information (Click to verify)", expanded=True):
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.write(f"**Name:** {st.session_state.profile['firstName']} {st.session_state.profile['lastName']}")
-                    st.write(f"**Email:** {st.session_state.profile['email']}")
-                    st.write(f"**Phone:** {st.session_state.profile['phone']}")
-                with col2:
-                    st.write(f"**Current Role:** {st.session_state.profile['currentTitle']}")
-                    st.write(f"**Company:** {st.session_state.profile['currentCompany']}")
-                    st.write(f"**LinkedIn:** {st.session_state.profile['linkedin']}")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Platform", f"{icon} {platform}")
+            with col2:
+                st.metric("Company", job_data['company'] or 'Unknown')
+            with col3:
+                st.metric("Location", job_data['location'] or 'Not specified')
             
-            # Check if profile is complete
-            required_fields = ['firstName', 'lastName', 'email']
-            missing_fields = [f for f in required_fields if not st.session_state.profile.get(f)]
+            # Show job details
+            st.markdown("### 📋 Job Details")
             
-            if missing_fields:
-                st.warning(f"⚠️ Please fill in required fields in the sidebar: {', '.join(missing_fields)}")
+            if job_data['title']:
+                st.markdown(f"**Position:** {job_data['title']}")
+            
+            if job_data['salary']:
+                st.markdown(f"**💰 Salary:** {job_data['salary']}")
+            
+            if job_data['description']:
+                with st.expander("📄 Job Description", expanded=False):
+                    st.markdown(job_data['description'][:1500] + "..." if len(job_data['description']) > 1500 else job_data['description'])
+            
+            if job_data['questions']:
+                with st.expander(f"❓ Application Questions ({len(job_data['questions'])} found)", expanded=True):
+                    for i, q in enumerate(job_data['questions'][:10], 1):
+                        st.markdown(f"{i}. {q}")
+            
+            st.markdown("---")
+            
+            if platform != 'Unknown':
+                st.markdown("### 📝 Application Preview")
+                
+                # Show profile summary
+                with st.expander("Your Information (Click to verify)", expanded=True):
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.write(f"**Name:** {st.session_state.profile['firstName']} {st.session_state.profile['lastName']}")
+                        st.write(f"**Email:** {st.session_state.profile['email']}")
+                        st.write(f"**Phone:** {st.session_state.profile['phone']}")
+                    with col2:
+                        st.write(f"**Current Role:** {st.session_state.profile['currentTitle']}")
+                        st.write(f"**Company:** {st.session_state.profile['currentCompany']}")
+                        st.write(f"**LinkedIn:** {st.session_state.profile['linkedin']}")
+                
+                # Check if profile is complete
+                required_fields = ['firstName', 'lastName', 'email']
+                missing_fields = [f for f in required_fields if not st.session_state.profile.get(f)]
+                
+                if missing_fields:
+                    st.warning(f"⚠️ Please fill in required fields in the sidebar: {', '.join(missing_fields)}")
+                else:
+                    st.markdown("### 🎯 Auto-Fill Script")
+                    st.info("Copy the script below and paste it in your browser's console on the job application page.")
+                    
+                    script = generate_application_script(platform, st.session_state.profile, job_data.get('apply_url', job_url))
+                    
+                    st.code(script, language='javascript')
+                    
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        if st.button("📋 Copy Script", use_container_width=True):
+                            st.toast("Script copied! Paste it in browser console (F12 → Console)")
+                    
+                    with col2:
+                        apply_url = job_data.get('apply_url', job_url)
+                        st.link_button("🔗 Open Application", apply_url, use_container_width=True)
+                    
+                    with col3:
+                        if st.button("✅ Mark as Applied", use_container_width=True):
+                            st.session_state.applications.append({
+                                'url': job_url,
+                                'company': job_data['company'],
+                                'title': job_data['title'],
+                                'platform': platform,
+                                'date': datetime.now().strftime("%Y-%m-%d %H:%M"),
+                                'status': 'Applied'
+                            })
+                            st.success("Application tracked!")
+                            st.balloons()
+                    
+                    st.markdown("---")
+                    st.markdown("#### 📌 How to use:")
+                    st.markdown("""
+                    1. Click **Open Application** to go to the application form
+                    2. Press **F12** to open Developer Tools
+                    3. Go to the **Console** tab
+                    4. Paste the script and press **Enter**
+                    5. Review the filled fields and upload your resume
+                    6. Submit the application
+                    7. Come back and click **Mark as Applied** to track it
+                    """)
             else:
-                st.markdown("### 🎯 Auto-Fill Script")
-                st.info("Since Streamlit Cloud cannot directly control your browser, copy the script below and paste it in your browser's console on the job page.")
-                
-                script = generate_application_script(platform, st.session_state.profile, job_url)
-                
-                st.code(script, language='javascript')
-                
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    if st.button("📋 Copy Script", use_container_width=True):
-                        st.toast("Script copied! Paste it in browser console (F12 → Console)")
-                
-                with col2:
-                    st.link_button("🔗 Open Job Page", job_url, use_container_width=True)
-                
-                with col3:
-                    if st.button("✅ Mark as Applied", use_container_width=True):
-                        st.session_state.applications.append({
-                            'url': job_url,
-                            'company': job_info['company'],
-                            'platform': platform,
-                            'date': datetime.now().strftime("%Y-%m-%d %H:%M"),
-                            'status': 'Applied'
-                        })
-                        st.success("Application tracked!")
-                        st.balloons()
-                
-                st.markdown("---")
-                st.markdown("#### 📌 How to use:")
-                st.markdown("""
-                1. Click **Open Job Page** to go to the application
-                2. Press **F12** to open Developer Tools
-                3. Go to the **Console** tab
-                4. Paste the script and press **Enter**
-                5. Review the filled fields and upload your resume
-                6. Submit the application
-                7. Come back and click **Mark as Applied** to track it
-                """)
+                st.error("❌ Platform not recognized. Supported: Lever, Greenhouse, Workday, Glassdoor")
+        else:
+            st.error(f"❌ {job_result['error']}")
         else:
             st.error("❌ Platform not recognized. Supported platforms: Lever, Greenhouse, Workday, Glassdoor")
 
