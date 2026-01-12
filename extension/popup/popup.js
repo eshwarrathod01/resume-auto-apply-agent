@@ -1,71 +1,53 @@
-// Popup Script for Resume Auto Apply Agent
+// Resume Auto Apply Agent - Popup Script
 
 class PopupController {
   constructor() {
     this.profile = {};
-    this.settings = {};
-    this.logs = [];
+    this.resumeData = null;
     this.init();
   }
 
   async init() {
-    await this.loadStoredData();
+    await this.loadProfile();
     this.setupTabs();
     this.setupEventListeners();
-    this.updateConnectionStatus();
     this.updateCurrentPageInfo();
   }
 
-  async loadStoredData() {
+  // Load saved profile from Chrome storage
+  async loadProfile() {
     return new Promise((resolve) => {
-      chrome.storage.local.get(['userProfile', 'settings', 'logs', 'resumeData', 'coverLetterData'], (result) => {
+      chrome.storage.local.get(['userProfile', 'resumeData'], (result) => {
         this.profile = result.userProfile || {};
-        this.settings = result.settings || {
-          serverUrl: 'http://localhost:3000',
-          wsUrl: 'ws://localhost:3001',
-          autoFill: true,
-          autoSubmit: false,
-          notifySuccess: true
-        };
-        this.logs = result.logs || [];
         this.resumeData = result.resumeData || null;
-        this.coverLetterData = result.coverLetterData || null;
-        
         this.populateForm();
-        this.renderLogs();
         resolve();
       });
     });
   }
 
+  // Populate form with saved profile data
   populateForm() {
-    // Profile fields
-    const profileFields = ['fullName', 'firstName', 'lastName', 'email', 'phone', 'location', 
-                          'linkedin', 'github', 'portfolio', 'currentCompany'];
+    const fields = [
+      'fullName', 'firstName', 'lastName', 'email', 'phone', 
+      'location', 'linkedin', 'github', 'portfolio', 
+      'currentCompany', 'currentTitle', 'yearsExperience'
+    ];
     
-    profileFields.forEach(field => {
+    fields.forEach(field => {
       const element = document.getElementById(field);
       if (element && this.profile[field]) {
         element.value = this.profile[field];
       }
     });
 
-    // Settings
-    document.getElementById('serverUrl').value = this.settings.serverUrl || 'http://localhost:3000';
-    document.getElementById('wsUrl').value = this.settings.wsUrl || 'ws://localhost:3001';
-    document.getElementById('autoFill').checked = this.settings.autoFill !== false;
-    document.getElementById('autoSubmit').checked = this.settings.autoSubmit === true;
-    document.getElementById('notifySuccess').checked = this.settings.notifySuccess !== false;
-
-    // File names
-    if (this.resumeData) {
-      document.getElementById('resumeFileName').textContent = this.resumeData.name;
-    }
-    if (this.coverLetterData) {
-      document.getElementById('coverLetterFileName').textContent = this.coverLetterData.name;
+    // Show resume file name if uploaded
+    if (this.resumeData && this.resumeData.name) {
+      document.getElementById('resumeFileName').textContent = '✅ ' + this.resumeData.name;
     }
   }
 
+  // Setup tab switching
   setupTabs() {
     const tabs = document.querySelectorAll('.tab');
     const contents = document.querySelectorAll('.tab-content');
@@ -83,305 +65,192 @@ class PopupController {
     });
   }
 
+  // Setup all event listeners
   setupEventListeners() {
-    // Profile
+    // Save profile button
     document.getElementById('saveProfile').addEventListener('click', () => this.saveProfile());
-    document.getElementById('resumeFile').addEventListener('change', (e) => this.handleFileUpload(e, 'resume'));
-    document.getElementById('coverLetterFile').addEventListener('change', (e) => this.handleFileUpload(e, 'coverLetter'));
-
-    // Apply
-    document.getElementById('useCurrentUrl').addEventListener('click', () => this.useCurrentUrl());
-    document.getElementById('detectFields').addEventListener('click', () => this.detectFields());
+    
+    // Resume file upload
+    document.getElementById('resumeFile').addEventListener('change', (e) => this.handleResumeUpload(e));
+    
+    // Fill form button
     document.getElementById('fillForm').addEventListener('click', () => this.fillForm());
-    document.getElementById('submitApplication').addEventListener('click', () => this.submitApplication());
-
-    // Settings
-    document.getElementById('saveSettings').addEventListener('click', () => this.saveSettings());
-    document.getElementById('connectServer').addEventListener('click', () => this.connectToServer());
-    document.getElementById('clearData').addEventListener('click', () => this.clearAllData());
-
-    // Logs
-    document.getElementById('clearLogs').addEventListener('click', () => this.clearLogs());
+    
+    // Refresh status button
+    document.getElementById('refreshStatus').addEventListener('click', () => this.updateCurrentPageInfo());
   }
 
+  // Save profile to Chrome storage
   async saveProfile() {
-    const profileFields = ['fullName', 'firstName', 'lastName', 'email', 'phone', 'location',
-                          'linkedin', 'github', 'portfolio', 'currentCompany'];
+    const fields = [
+      'fullName', 'firstName', 'lastName', 'email', 'phone', 
+      'location', 'linkedin', 'github', 'portfolio', 
+      'currentCompany', 'currentTitle', 'yearsExperience'
+    ];
     
-    profileFields.forEach(field => {
+    fields.forEach(field => {
       const element = document.getElementById(field);
       if (element) {
         this.profile[field] = element.value;
       }
     });
 
+    // Auto-split full name if first/last not provided
+    if (this.profile.fullName && (!this.profile.firstName || !this.profile.lastName)) {
+      const parts = this.profile.fullName.split(' ');
+      if (parts.length >= 2) {
+        this.profile.firstName = this.profile.firstName || parts[0];
+        this.profile.lastName = this.profile.lastName || parts.slice(1).join(' ');
+      }
+    }
+
     await chrome.storage.local.set({ userProfile: this.profile });
-    this.addLog('Profile saved successfully', 'success');
-    this.showNotification('Profile saved!');
+    this.showStatus('saveStatus', 'Profile saved successfully! ✅', 'success');
   }
 
-  async handleFileUpload(event, type) {
+  // Handle resume file upload
+  async handleResumeUpload(event) {
     const file = event.target.files[0];
     if (!file) return;
+
+    // Check file size (max 5MB for storage)
+    if (file.size > 5 * 1024 * 1024) {
+      this.showStatus('saveStatus', 'File too large. Max 5MB allowed.', 'error');
+      return;
+    }
 
     const reader = new FileReader();
     reader.onload = async (e) => {
       const base64 = e.target.result.split(',')[1];
-      const fileData = {
+      this.resumeData = {
         name: file.name,
         type: file.type,
         size: file.size,
-        data: base64
+        data: base64,
+        uploadedAt: new Date().toISOString()
       };
 
-      if (type === 'resume') {
-        this.resumeData = fileData;
-        document.getElementById('resumeFileName').textContent = file.name;
-        await chrome.storage.local.set({ resumeData: fileData });
-      } else {
-        this.coverLetterData = fileData;
-        document.getElementById('coverLetterFileName').textContent = file.name;
-        await chrome.storage.local.set({ coverLetterData: fileData });
-      }
+      await chrome.storage.local.set({ resumeData: this.resumeData });
+      document.getElementById('resumeFileName').textContent = '✅ ' + file.name;
+      this.showStatus('saveStatus', 'Resume uploaded successfully! ✅', 'success');
+    };
 
-      this.addLog(`${type === 'resume' ? 'Resume' : 'Cover letter'} uploaded: ${file.name}`, 'success');
+    reader.onerror = () => {
+      this.showStatus('saveStatus', 'Error reading file. Please try again.', 'error');
     };
 
     reader.readAsDataURL(file);
   }
 
-  async useCurrentUrl() {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (tab?.url) {
-      document.getElementById('jobUrl').value = tab.url;
-    }
-  }
-
+  // Update current page info
   async updateCurrentPageInfo() {
     try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      
       if (tab?.url) {
-        document.getElementById('currentUrl').textContent = tab.url.substring(0, 50) + (tab.url.length > 50 ? '...' : '');
-        
+        // Update URL display
+        const urlDisplay = document.getElementById('currentUrl');
+        urlDisplay.textContent = tab.url.length > 60 
+          ? tab.url.substring(0, 60) + '...' 
+          : tab.url;
+        urlDisplay.title = tab.url;
+
+        // Detect platform
         const platform = this.detectPlatform(tab.url);
-        const badge = document.getElementById('platformBadge');
-        badge.textContent = platform;
-        badge.style.background = platform !== 'unknown' ? '#4361ee' : '#666';
+        document.getElementById('detectedPlatform').textContent = platform;
+        document.getElementById('platformStatus').textContent = platform;
+        
+        // Update platform badge styling
+        const platformBadge = document.getElementById('platformStatus');
+        if (platform !== 'Unknown') {
+          platformBadge.style.background = '#4ade80';
+          platformBadge.style.color = '#064e3b';
+        } else {
+          platformBadge.style.background = '#fbbf24';
+          platformBadge.style.color = '#78350f';
+        }
       }
     } catch (error) {
       console.error('Error getting current tab:', error);
+      document.getElementById('currentUrl').textContent = 'Unable to detect page';
     }
   }
 
+  // Detect ATS platform from URL
   detectPlatform(url) {
-    if (/lever\.co/.test(url)) return 'Lever';
-    if (/greenhouse\.io/.test(url)) return 'Greenhouse';
-    if (/myworkdayjobs\.com/.test(url)) return 'Workday';
-    if (/glassdoor\.com/.test(url)) return 'Glassdoor';
+    if (/lever\.co/i.test(url)) return 'Lever';
+    if (/greenhouse\.io/i.test(url)) return 'Greenhouse';
+    if (/myworkdayjobs\.com/i.test(url)) return 'Workday';
+    if (/glassdoor\./i.test(url)) return 'Glassdoor';
+    if (/workday\.com/i.test(url)) return 'Workday';
+    if (/icims\.com/i.test(url)) return 'iCIMS';
+    if (/taleo\.net/i.test(url)) return 'Taleo';
+    if (/successfactors/i.test(url)) return 'SuccessFactors';
     return 'Unknown';
   }
 
-  async detectFields() {
-    try {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      
-      const response = await chrome.tabs.sendMessage(tab.id, { action: 'GET_FORM_FIELDS' });
-      
-      const fieldsList = document.getElementById('fieldsList');
-      fieldsList.innerHTML = '';
-      
-      if (response?.fields?.length > 0) {
-        response.fields.forEach(field => {
-          const li = document.createElement('li');
-          li.innerHTML = `<strong>${field.label || field.name}</strong> (${field.type})${field.required ? ' *' : ''}`;
-          fieldsList.appendChild(li);
-        });
-        this.addLog(`Detected ${response.fields.length} fields`, 'info');
-      } else {
-        fieldsList.innerHTML = '<li>No fields detected</li>';
-        this.addLog('No form fields detected', 'warning');
-      }
-    } catch (error) {
-      this.addLog(`Error detecting fields: ${error.message}`, 'error');
-    }
-  }
-
+  // Fill form on current page
   async fillForm() {
     try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      const platform = this.detectPlatform(tab.url).toLowerCase();
       
-      const formData = {
-        ...this.profile,
-        resume: this.resumeData ? {
-          data: this.resumeData.data,
-          name: this.resumeData.name,
-          mimeType: this.resumeData.type
-        } : null,
-        coverLetter: this.coverLetterData ? {
-          data: this.coverLetterData.data,
-          name: this.coverLetterData.name,
-          mimeType: this.coverLetterData.type
-        } : null
-      };
+      if (!tab?.id) {
+        this.showStatus('fillStatus', 'No active tab found.', 'error');
+        return;
+      }
 
-      this.updateStatus('Filling form...', 'info');
-      
-      const response = await chrome.tabs.sendMessage(tab.id, {
+      // Check if profile has minimum required data
+      if (!this.profile.email || !this.profile.fullName) {
+        this.showStatus('fillStatus', 'Please fill in your profile first (Name & Email required).', 'error');
+        return;
+      }
+
+      this.showStatus('fillStatus', 'Filling form...', 'info');
+
+      // Send message to content script to fill the form
+      chrome.tabs.sendMessage(tab.id, {
         action: 'FILL_FORM',
-        formData,
-        platform
-      });
-
-      if (response?.success) {
-        this.updateStatus(`Filled ${response.results?.filled?.length || 0} fields`, 'success');
-        this.addLog(`Form filled: ${response.results?.filled?.length || 0} fields`, 'success');
-      } else {
-        this.updateStatus('Fill failed: ' + (response?.error || 'Unknown error'), 'error');
-        this.addLog('Form fill failed: ' + (response?.error || 'Unknown error'), 'error');
-      }
-    } catch (error) {
-      this.updateStatus('Error: ' + error.message, 'error');
-      this.addLog('Fill error: ' + error.message, 'error');
-    }
-  }
-
-  async submitApplication() {
-    const confirmed = confirm('Are you sure you want to submit this application?');
-    if (!confirmed) return;
-
-    try {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      
-      this.updateStatus('Submitting application...', 'info');
-      
-      const response = await chrome.tabs.sendMessage(tab.id, {
-        action: 'SUBMIT_APPLICATION'
-      });
-
-      if (response?.success) {
-        this.updateStatus('Application submitted successfully!', 'success');
-        this.addLog('Application submitted successfully', 'success');
-      } else {
-        this.updateStatus('Submission failed: ' + (response?.error || 'Unknown error'), 'error');
-        this.addLog('Submission failed: ' + (response?.error || 'Unknown error'), 'error');
-      }
-    } catch (error) {
-      this.updateStatus('Error: ' + error.message, 'error');
-      this.addLog('Submit error: ' + error.message, 'error');
-    }
-  }
-
-  updateStatus(message, type = 'info') {
-    const statusEl = document.getElementById('statusMessage');
-    statusEl.textContent = message;
-    statusEl.className = 'status-message ' + type;
-  }
-
-  async saveSettings() {
-    this.settings = {
-      serverUrl: document.getElementById('serverUrl').value,
-      wsUrl: document.getElementById('wsUrl').value,
-      autoFill: document.getElementById('autoFill').checked,
-      autoSubmit: document.getElementById('autoSubmit').checked,
-      notifySuccess: document.getElementById('notifySuccess').checked
-    };
-
-    await chrome.storage.local.set({ settings: this.settings });
-    this.addLog('Settings saved', 'success');
-    this.showNotification('Settings saved!');
-  }
-
-  async connectToServer() {
-    try {
-      chrome.runtime.sendMessage({ action: 'CONNECT_SERVER' }, (response) => {
+        profile: this.profile,
+        resumeData: this.resumeData
+      }, (response) => {
+        if (chrome.runtime.lastError) {
+          // Content script might not be loaded yet
+          this.showStatus('fillStatus', 'Please refresh the page and try again. The extension needs to load first.', 'error');
+          return;
+        }
+        
         if (response?.success) {
-          this.addLog('Connected to server', 'success');
-          this.updateConnectionStatus(true);
+          this.showStatus('fillStatus', `Form filled successfully! ✅ (${response.filledCount || 0} fields)`, 'success');
+        } else {
+          this.showStatus('fillStatus', response?.message || 'Form fill completed. Please review the fields.', 'info');
         }
       });
+
     } catch (error) {
-      this.addLog('Failed to connect: ' + error.message, 'error');
+      console.error('Error filling form:', error);
+      this.showStatus('fillStatus', 'Error: ' + error.message, 'error');
     }
   }
 
-  updateConnectionStatus(connected = false) {
-    const statusEl = document.getElementById('connectionStatus');
-    if (connected) {
-      statusEl.classList.add('connected');
-      statusEl.querySelector('.status-text').textContent = 'Connected';
-    } else {
-      statusEl.classList.remove('connected');
-      statusEl.querySelector('.status-text').textContent = 'Disconnected';
-    }
-  }
+  // Show status message
+  showStatus(elementId, message, type) {
+    const element = document.getElementById(elementId);
+    if (!element) return;
 
-  async clearAllData() {
-    const confirmed = confirm('Are you sure you want to clear all data? This cannot be undone.');
-    if (!confirmed) return;
+    element.textContent = message;
+    element.className = 'status-message ' + type;
+    element.style.display = 'block';
 
-    await chrome.storage.local.clear();
-    this.profile = {};
-    this.settings = {};
-    this.logs = [];
-    this.resumeData = null;
-    this.coverLetterData = null;
-    
-    this.populateForm();
-    this.renderLogs();
-    this.addLog('All data cleared', 'warning');
-  }
-
-  addLog(message, type = 'info') {
-    const log = {
-      time: new Date().toLocaleTimeString(),
-      message,
-      type
-    };
-    
-    this.logs.unshift(log);
-    if (this.logs.length > 100) this.logs.pop();
-    
-    chrome.storage.local.set({ logs: this.logs });
-    this.renderLogs();
-  }
-
-  renderLogs() {
-    const container = document.getElementById('logsContainer');
-    
-    if (this.logs.length === 0) {
-      container.innerHTML = '<p class="log-empty">No activity yet</p>';
-      return;
-    }
-
-    container.innerHTML = this.logs.map(log => `
-      <div class="log-entry ${log.type}">
-        <span class="log-time">${log.time}</span>
-        ${log.message}
-      </div>
-    `).join('');
-  }
-
-  clearLogs() {
-    this.logs = [];
-    chrome.storage.local.set({ logs: [] });
-    this.renderLogs();
-  }
-
-  showNotification(message) {
-    // Simple visual feedback
-    const btn = document.activeElement;
-    if (btn) {
-      const originalText = btn.textContent;
-      btn.textContent = '✓ ' + message;
+    // Auto-hide success/info messages after 3 seconds
+    if (type === 'success' || type === 'info') {
       setTimeout(() => {
-        btn.textContent = originalText;
-      }, 1500);
+        element.style.display = 'none';
+      }, 3000);
     }
   }
 }
 
-// Initialize popup
+// Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
   new PopupController();
 });

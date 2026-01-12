@@ -1,461 +1,338 @@
-// Common Content Script - Shared utilities for all ATS platforms
+// Resume Auto Apply Agent - Content Script
+// Automatically fills job application forms on ATS platforms
 
-class FormAutoFiller {
-  constructor() {
-    this.platform = this.detectPlatform();
-    this.formData = null;
-    this.isReady = false;
-  }
+(function() {
+  'use strict';
 
-  detectPlatform() {
-    const url = window.location.href;
-    if (/lever\.co/.test(url)) return 'lever';
-    if (/greenhouse\.io/.test(url)) return 'greenhouse';
-    if (/myworkdayjobs\.com/.test(url)) return 'workday';
-    if (/glassdoor\.com/.test(url)) return 'glassdoor';
+  // Detect which platform we're on
+  function detectPlatform() {
+    const url = window.location.href.toLowerCase();
+    if (url.includes('lever.co')) return 'lever';
+    if (url.includes('greenhouse.io')) return 'greenhouse';
+    if (url.includes('myworkdayjobs.com') || url.includes('workday')) return 'workday';
+    if (url.includes('glassdoor.com')) return 'glassdoor';
     return 'unknown';
   }
 
-  // Wait for element to appear
-  async waitForElement(selector, timeout = 10000) {
-    return new Promise((resolve, reject) => {
-      const startTime = Date.now();
-      
-      const checkElement = () => {
-        const element = document.querySelector(selector);
-        if (element) {
-          resolve(element);
-          return;
-        }
-        
-        if (Date.now() - startTime > timeout) {
-          reject(new Error(`Element ${selector} not found within ${timeout}ms`));
-          return;
-        }
-        
-        requestAnimationFrame(checkElement);
-      };
-      
-      checkElement();
-    });
-  }
+  // Sleep helper
+  const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-  // Simulate human-like typing
-  async typeText(element, text, delay = 50) {
+  // Type text with human-like behavior
+  async function typeText(element, text) {
     element.focus();
     element.value = '';
     
-    // Dispatch events to trigger any listeners
-    element.dispatchEvent(new Event('focus', { bubbles: true }));
-    
     for (const char of text) {
       element.value += char;
-      element.dispatchEvent(new KeyboardEvent('keydown', { key: char, bubbles: true }));
-      element.dispatchEvent(new KeyboardEvent('keypress', { key: char, bubbles: true }));
       element.dispatchEvent(new Event('input', { bubbles: true }));
-      element.dispatchEvent(new KeyboardEvent('keyup', { key: char, bubbles: true }));
-      
-      // Random delay to simulate human typing
-      await this.sleep(delay + Math.random() * 30);
+      await sleep(20 + Math.random() * 30);
     }
     
     element.dispatchEvent(new Event('change', { bubbles: true }));
     element.dispatchEvent(new Event('blur', { bubbles: true }));
   }
 
-  // Set value directly with events
-  setValue(element, value) {
+  // Set value directly
+  function setValue(element, value) {
     element.focus();
     element.value = value;
     element.dispatchEvent(new Event('input', { bubbles: true }));
     element.dispatchEvent(new Event('change', { bubbles: true }));
-    element.dispatchEvent(new Event('blur', { bubbles: true }));
   }
 
-  // Click element with human-like behavior
-  async clickElement(element, delay = 100) {
+  // Click element
+  async function clickElement(element) {
     element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    await this.sleep(delay);
-    
-    const rect = element.getBoundingClientRect();
-    const x = rect.left + rect.width / 2;
-    const y = rect.top + rect.height / 2;
-    
-    element.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true, clientX: x, clientY: y }));
-    element.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, clientX: x, clientY: y }));
-    await this.sleep(50);
-    element.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: x, clientY: y }));
-    element.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: x, clientY: y }));
-    element.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: x, clientY: y }));
+    await sleep(100);
+    element.click();
   }
 
   // Select dropdown option
-  async selectOption(selectElement, value) {
-    selectElement.focus();
-    
-    // Try to find option by value or text
+  function selectOption(selectElement, value) {
     const options = selectElement.querySelectorAll('option');
-    let targetOption = null;
-    
     for (const option of options) {
-      if (option.value === value || option.textContent.toLowerCase().includes(value.toLowerCase())) {
-        targetOption = option;
-        break;
-      }
-    }
-    
-    if (targetOption) {
-      selectElement.value = targetOption.value;
-      selectElement.dispatchEvent(new Event('change', { bubbles: true }));
-      return true;
-    }
-    
-    return false;
-  }
-
-  // Handle custom dropdowns (React/Vue styled)
-  async handleCustomDropdown(container, value) {
-    // Click to open dropdown
-    const trigger = container.querySelector('[role="combobox"], [role="listbox"], .select-trigger, button');
-    if (trigger) {
-      await this.clickElement(trigger);
-      await this.sleep(200);
-    }
-
-    // Find and click option
-    const options = document.querySelectorAll('[role="option"], .dropdown-item, .option');
-    for (const option of options) {
-      if (option.textContent.toLowerCase().includes(value.toLowerCase())) {
-        await this.clickElement(option);
+      if (option.value.toLowerCase().includes(value.toLowerCase()) || 
+          option.textContent.toLowerCase().includes(value.toLowerCase())) {
+        selectElement.value = option.value;
+        selectElement.dispatchEvent(new Event('change', { bubbles: true }));
         return true;
       }
     }
-    
     return false;
   }
 
-  // Check checkbox
-  async checkCheckbox(checkbox, shouldBeChecked = true) {
-    if (checkbox.checked !== shouldBeChecked) {
-      await this.clickElement(checkbox);
-    }
-  }
-
-  // Handle radio buttons
-  async selectRadio(name, value) {
-    const radios = document.querySelectorAll(`input[type="radio"][name="${name}"]`);
+  // Select radio button by label text
+  async function selectRadioByText(container, text) {
+    const radios = container.querySelectorAll('input[type="radio"]');
     for (const radio of radios) {
-      const label = radio.parentElement?.textContent || radio.nextElementSibling?.textContent || '';
-      if (radio.value === value || label.toLowerCase().includes(value.toLowerCase())) {
-        await this.clickElement(radio);
+      const label = radio.closest('label') || 
+                    document.querySelector(`label[for="${radio.id}"]`) || 
+                    radio.parentElement;
+      if (label && label.textContent.toLowerCase().includes(text.toLowerCase())) {
+        await clickElement(radio);
         return true;
       }
     }
     return false;
   }
 
-  // Upload file to input
-  async uploadFile(input, fileData, fileName, mimeType) {
-    try {
-      // Convert base64 to blob
-      const byteCharacters = atob(fileData);
-      const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i++) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
+  // Select checkbox by label text
+  async function selectCheckboxByText(container, texts) {
+    const checkboxes = container.querySelectorAll('input[type="checkbox"]');
+    const textArr = Array.isArray(texts) ? texts : [texts];
+    
+    for (const checkbox of checkboxes) {
+      const label = checkbox.closest('label') || 
+                    document.querySelector(`label[for="${checkbox.id}"]`) || 
+                    checkbox.parentElement;
+      if (label) {
+        for (const text of textArr) {
+          if (label.textContent.toLowerCase().includes(text.toLowerCase()) && !checkbox.checked) {
+            await clickElement(checkbox);
+          }
+        }
       }
-      const byteArray = new Uint8Array(byteNumbers);
-      const blob = new Blob([byteArray], { type: mimeType });
-      
-      // Create File object
-      const file = new File([blob], fileName, { type: mimeType });
-      
-      // Create DataTransfer and add file
-      const dataTransfer = new DataTransfer();
-      dataTransfer.items.add(file);
-      
-      // Set files on input
-      input.files = dataTransfer.files;
-      
-      // Dispatch events
-      input.dispatchEvent(new Event('change', { bubbles: true }));
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-      
+    }
+  }
+
+  // Find question block by text
+  function findQuestionByText(searchText) {
+    const labels = document.querySelectorAll('label, h3, h4, legend, .question-text');
+    for (const label of labels) {
+      if (label.textContent.toLowerCase().includes(searchText.toLowerCase())) {
+        return label.closest('li, fieldset, .application-question, .form-group, div');
+      }
+    }
+    return null;
+  }
+
+  // Fill field by selector
+  function fillBySelector(selector, value) {
+    const element = document.querySelector(selector);
+    if (element && value) {
+      setValue(element, value);
       return true;
-    } catch (error) {
-      console.error('Error uploading file:', error);
-      return false;
     }
+    return false;
   }
 
-  // Detect CAPTCHA on page
-  detectCaptcha() {
-    const captchaIndicators = [
-      // reCAPTCHA
-      { selector: '.g-recaptcha', type: 'recaptcha-v2' },
-      { selector: '[data-sitekey]', type: 'recaptcha-v2' },
-      { selector: '.grecaptcha-badge', type: 'recaptcha-v3' },
-      // hCaptcha
-      { selector: '.h-captcha', type: 'hcaptcha' },
-      { selector: '[data-hcaptcha-sitekey]', type: 'hcaptcha' },
-      // Cloudflare Turnstile
-      { selector: '.cf-turnstile', type: 'turnstile' },
-      // Generic challenge
-      { selector: '[class*="captcha"]', type: 'unknown' },
-      { selector: '#captcha', type: 'unknown' }
-    ];
+  // Fill all basic fields
+  async function fillBasicFields(profile) {
+    const platform = detectPlatform();
+    console.log(`🚀 Auto-filling ${platform} application...`);
 
-    for (const indicator of captchaIndicators) {
-      const element = document.querySelector(indicator.selector);
-      if (element) {
-        const siteKey = element.getAttribute('data-sitekey') || 
-                       element.getAttribute('data-hcaptcha-sitekey') || '';
-        return {
-          detected: true,
-          type: indicator.type,
-          siteKey,
-          element
-        };
-      }
-    }
-
-    return { detected: false };
-  }
-
-  // Check if form submission was successful
-  checkSubmissionStatus() {
-    const successIndicators = [
-      'thank you',
-      'application received',
-      'successfully submitted',
-      'application submitted',
-      'we have received your application',
-      'confirmation'
-    ];
-
-    const pageText = document.body.innerText.toLowerCase();
-    const isSuccess = successIndicators.some(indicator => pageText.includes(indicator));
-
-    // Check for error messages
-    const errorIndicators = [
-      'error',
-      'failed',
-      'please correct',
-      'required field',
-      'invalid'
-    ];
-    
-    const hasErrors = document.querySelectorAll('.error, .error-message, [class*="error"]').length > 0;
-
-    return {
-      success: isSuccess && !hasErrors,
-      hasErrors,
-      url: window.location.href
+    // Common field mappings for all platforms
+    const fieldMappings = {
+      // Lever
+      'input[name="name"]': `${profile.firstName} ${profile.lastName}`,
+      'input[name="email"]': profile.email,
+      'input[name="phone"]': profile.phone,
+      'input[name="location"]': profile.location,
+      'input[name="org"]': profile.currentCompany,
+      'input[name="urls[LinkedIn]"]': profile.linkedin,
+      'input[name="urls[GitHub]"]': profile.github || profile.portfolio,
+      'input[name="urls[Portfolio]"]': profile.portfolio,
+      
+      // Greenhouse
+      '#first_name': profile.firstName,
+      '#last_name': profile.lastName,
+      '#email': profile.email,
+      '#phone': profile.phone,
+      'input[name="job_application[first_name]"]': profile.firstName,
+      'input[name="job_application[last_name]"]': profile.lastName,
+      'input[name="job_application[email]"]': profile.email,
+      'input[name="job_application[phone]"]': profile.phone,
+      
+      // Workday
+      'input[data-automation-id="firstName"]': profile.firstName,
+      'input[data-automation-id="lastName"]': profile.lastName,
+      'input[data-automation-id="email"]': profile.email,
+      'input[data-automation-id="phone"]': profile.phone,
+      
+      // Glassdoor
+      'input[name="firstName"]': profile.firstName,
+      'input[name="lastName"]': profile.lastName,
+      'input[name="emailAddress"]': profile.email,
+      'input[name="phoneNumber"]': profile.phone,
+      
+      // Generic
+      'input[type="email"]': profile.email,
+      'input[type="tel"]': profile.phone,
+      'input[placeholder*="email" i]': profile.email,
+      'input[placeholder*="phone" i]': profile.phone,
+      'input[placeholder*="linkedin" i]': profile.linkedin,
     };
-  }
 
-  // Get all form fields on page
-  getFormFields() {
-    const fields = [];
-    
-    // Text inputs
-    document.querySelectorAll('input[type="text"], input[type="email"], input[type="tel"], input[type="url"]').forEach(input => {
-      fields.push({
-        type: 'text',
-        name: input.name || input.id,
-        label: this.getFieldLabel(input),
-        element: input,
-        required: input.required
-      });
-    });
+    let filledCount = 0;
 
-    // Textareas
-    document.querySelectorAll('textarea').forEach(textarea => {
-      fields.push({
-        type: 'textarea',
-        name: textarea.name || textarea.id,
-        label: this.getFieldLabel(textarea),
-        element: textarea,
-        required: textarea.required
-      });
-    });
-
-    // Selects
-    document.querySelectorAll('select').forEach(select => {
-      const options = Array.from(select.options).map(opt => ({
-        value: opt.value,
-        text: opt.textContent
-      }));
-      fields.push({
-        type: 'select',
-        name: select.name || select.id,
-        label: this.getFieldLabel(select),
-        element: select,
-        options,
-        required: select.required
-      });
-    });
-
-    // File inputs
-    document.querySelectorAll('input[type="file"]').forEach(input => {
-      fields.push({
-        type: 'file',
-        name: input.name || input.id,
-        label: this.getFieldLabel(input),
-        element: input,
-        accept: input.accept,
-        required: input.required
-      });
-    });
-
-    // Checkboxes
-    document.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
-      fields.push({
-        type: 'checkbox',
-        name: checkbox.name || checkbox.id,
-        label: this.getFieldLabel(checkbox),
-        element: checkbox,
-        required: checkbox.required
-      });
-    });
-
-    // Radio buttons
-    const radioGroups = {};
-    document.querySelectorAll('input[type="radio"]').forEach(radio => {
-      const name = radio.name;
-      if (!radioGroups[name]) {
-        radioGroups[name] = {
-          type: 'radio',
-          name,
-          label: this.getFieldLabel(radio),
-          options: [],
-          required: radio.required
-        };
+    for (const [selector, value] of Object.entries(fieldMappings)) {
+      if (value && fillBySelector(selector, value)) {
+        filledCount++;
+        await sleep(50);
       }
-      radioGroups[name].options.push({
-        value: radio.value,
-        label: this.getFieldLabel(radio)
-      });
-    });
-    fields.push(...Object.values(radioGroups));
+    }
 
-    return fields;
+    return filledCount;
   }
 
-  // Get label for form field
-  getFieldLabel(element) {
-    // Check for associated label
-    if (element.id) {
-      const label = document.querySelector(`label[for="${element.id}"]`);
-      if (label) return label.textContent.trim();
+  // Fill custom questions
+  async function fillCustomQuestions(profile) {
+    const defaultAnswers = {
+      'notice period': profile.noticePeriod || '2 weeks',
+      'start date': profile.startDate || 'Immediately',
+      'ideal start': profile.startDate || 'Immediately',
+      'salary': profile.expectedSalary || 'Negotiable',
+      'expected salary': profile.expectedSalary || 'Negotiable',
+      'salary range': profile.expectedSalary || 'Negotiable',
+      'how did you hear': profile.hearAbout || 'Online Job Board',
+      'hear about': profile.hearAbout || 'Online Job Board',
+      'languages': 'english',
+      'fluent': 'english',
+      'visa': 'no',
+      'require a visa': 'no',
+      'sponsor': 'no',
+      'authorized': 'yes',
+      'legally authorized': 'yes',
+      'open to working': 'yes',
+      'willing to': 'yes',
+      'coding language': profile.preferredLanguage || 'Python',
+      'python or r': profile.preferredLanguage || 'Python',
+      'consent': 'yes',
+      'agree': 'yes',
+      'retain': 'yes',
+      'acknowledge': 'yes'
+    };
+
+    let filledCount = 0;
+
+    for (const [pattern, answer] of Object.entries(defaultAnswers)) {
+      const block = findQuestionByText(pattern);
+      if (!block) continue;
+
+      const radios = block.querySelectorAll('input[type="radio"]');
+      const checkboxes = block.querySelectorAll('input[type="checkbox"]');
+      const textInput = block.querySelector('input[type="text"], input:not([type]), textarea');
+      const select = block.querySelector('select');
+
+      // Check if already filled
+      let isFilled = false;
+      if (radios.length > 0) {
+        isFilled = Array.from(radios).some(r => r.checked);
+      } else if (textInput) {
+        isFilled = textInput.value && textInput.value.trim();
+      }
+      
+      if (isFilled) continue;
+
+      if (radios.length > 0) {
+        if (await selectRadioByText(block, answer)) filledCount++;
+      } else if (checkboxes.length > 0) {
+        await selectCheckboxByText(block, answer);
+        filledCount++;
+      } else if (select) {
+        if (selectOption(select, answer)) filledCount++;
+      } else if (textInput) {
+        setValue(textInput, answer);
+        filledCount++;
+      }
+
+      await sleep(100);
     }
 
-    // Check parent label
-    const parentLabel = element.closest('label');
-    if (parentLabel) {
-      return parentLabel.textContent.replace(element.value, '').trim();
-    }
-
-    // Check aria-label
-    if (element.getAttribute('aria-label')) {
-      return element.getAttribute('aria-label');
-    }
-
-    // Check placeholder
-    if (element.placeholder) {
-      return element.placeholder;
-    }
-
-    // Check preceding sibling text
-    const prevSibling = element.previousElementSibling;
-    if (prevSibling && (prevSibling.tagName === 'LABEL' || prevSibling.tagName === 'SPAN')) {
-      return prevSibling.textContent.trim();
-    }
-
-    return element.name || element.id || '';
+    return filledCount;
   }
 
-  // Sleep utility
-  sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
+  // Handle consent checkboxes at the bottom
+  async function handleConsent() {
+    const checkboxes = document.querySelectorAll('input[type="checkbox"]');
+    let count = 0;
+    
+    for (const checkbox of checkboxes) {
+      const container = checkbox.closest('label, div');
+      if (container) {
+        const text = container.textContent.toLowerCase();
+        if ((text.includes('consent') || text.includes('agree') || 
+             text.includes('acknowledge') || text.includes('confirm') ||
+             text.includes('retain')) && !checkbox.checked) {
+          await clickElement(checkbox);
+          count++;
+        }
+      }
+    }
+    return count;
   }
 
-  // Show overlay notification
-  showNotification(message, type = 'info') {
+  // Show notification overlay
+  function showNotification(message, type = 'success') {
     const existing = document.querySelector('.auto-apply-notification');
     if (existing) existing.remove();
 
-    const notification = document.createElement('div');
-    notification.className = `auto-apply-notification auto-apply-${type}`;
-    notification.innerHTML = `
-      <span class="auto-apply-icon">${type === 'success' ? '✓' : type === 'error' ? '✗' : 'ℹ'}</span>
-      <span class="auto-apply-message">${message}</span>
+    const div = document.createElement('div');
+    div.className = 'auto-apply-notification';
+    div.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      padding: 16px 24px;
+      border-radius: 8px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 14px;
+      font-weight: 500;
+      z-index: 999999;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      animation: slideIn 0.3s ease;
+      ${type === 'success' ? 'background: #10B981; color: white;' : 
+        type === 'error' ? 'background: #EF4444; color: white;' :
+        'background: #3B82F6; color: white;'}
     `;
-    document.body.appendChild(notification);
+    div.textContent = message;
+    document.body.appendChild(div);
 
-    setTimeout(() => notification.remove(), 5000);
+    setTimeout(() => div.remove(), 4000);
   }
-}
 
-// Create global instance
-window.formAutoFiller = new FormAutoFiller();
-
-// Message listener for background script communication
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  const handler = async () => {
-    const filler = window.formAutoFiller;
-
-    switch (message.action) {
-      case 'PAGE_READY':
-        sendResponse({ 
-          ready: true, 
-          platform: filler.platform,
-          fields: filler.getFormFields().map(f => ({
-            type: f.type,
-            name: f.name,
-            label: f.label,
-            required: f.required
-          }))
-        });
-        break;
-
-      case 'CHECK_STATUS':
-        sendResponse(filler.checkSubmissionStatus());
-        break;
-
-      case 'HANDLE_CAPTCHA':
-        const captchaInfo = filler.detectCaptcha();
-        sendResponse({
-          captchaDetected: captchaInfo.detected,
-          captchaType: captchaInfo.type,
-          siteKey: captchaInfo.siteKey,
-          pageUrl: window.location.href,
-          solved: false
-        });
-        break;
-
-      case 'GET_FORM_FIELDS':
-        sendResponse({
-          success: true,
-          fields: filler.getFormFields().map(f => ({
-            type: f.type,
-            name: f.name,
-            label: f.label,
-            required: f.required,
-            options: f.options
-          }))
-        });
-        break;
-
-      default:
-        sendResponse({ success: false, error: 'Unknown action' });
+  // Main fill function
+  async function fillApplication(profile) {
+    try {
+      showNotification('🚀 Auto-filling application...', 'info');
+      
+      const basicCount = await fillBasicFields(profile);
+      await sleep(300);
+      
+      const customCount = await fillCustomQuestions(profile);
+      await sleep(200);
+      
+      const consentCount = await handleConsent();
+      
+      const total = basicCount + customCount + consentCount;
+      showNotification(`✅ Filled ${total} fields! Please upload resume & review.`, 'success');
+      
+      return { success: true, filled: total };
+    } catch (error) {
+      console.error('Auto-fill error:', error);
+      showNotification('❌ Error: ' + error.message, 'error');
+      return { success: false, error: error.message };
     }
-  };
+  }
 
-  handler().catch(error => {
-    sendResponse({ success: false, error: error.message });
+  // Listen for messages from popup
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.action === 'FILL_APPLICATION') {
+      fillApplication(message.profile).then(sendResponse);
+      return true; // Keep channel open for async response
+    }
+    
+    if (message.action === 'GET_PAGE_INFO') {
+      sendResponse({
+        platform: detectPlatform(),
+        url: window.location.href,
+        isApplicationPage: window.location.href.includes('/apply') || 
+                          document.querySelector('form, input[type="file"]') !== null
+      });
+      return true;
+    }
   });
 
-  return true; // Keep channel open for async response
-});
-
-console.log('Resume Auto Apply Agent - Common content script loaded');
+  // Log when script loads
+  console.log(`📋 Resume Auto Apply Agent loaded on ${detectPlatform()}`);
+})();

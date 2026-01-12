@@ -10,24 +10,19 @@
   <div class="container">
     <header>
       <h1>📄 Auto Apply Agent</h1>
-      <div class="status-indicator" id="connectionStatus">
-        <span class="status-dot"></span>
-        <span class="status-text">Disconnected</span>
-      </div>
+      <div id="platformStatus" class="platform-badge">Detecting...</div>
     </header>
 
     <nav class="tabs">
       <button class="tab active" data-tab="profile">Profile</button>
       <button class="tab" data-tab="apply">Apply</button>
-      <button class="tab" data-tab="settings">Settings</button>
-      <button class="tab" data-tab="logs">Logs</button>
     </nav>
 
     <!-- Profile Tab -->
     <div class="tab-content active" id="profile-tab">
       <div class="form-group">
-        <label for="fullName">Full Name</label>
-        <input type="text" id="fullName" placeholder="John Doe">
+        <label for="fullName">Full Name *</label>
+        <input type="text" id="fullName" placeholder="John Doe" required>
       </div>
       <div class="form-row">
         <div class="form-group">
@@ -40,16 +35,16 @@
         </div>
       </div>
       <div class="form-group">
-        <label for="email">Email</label>
-        <input type="email" id="email" placeholder="john@example.com">
+        <label for="email">Email *</label>
+        <input type="email" id="email" placeholder="john@example.com" required>
       </div>
       <div class="form-group">
-        <label for="phone">Phone</label>
+        <label for="phone">Phone *</label>
         <input type="tel" id="phone" placeholder="+1 (555) 123-4567">
       </div>
       <div class="form-group">
         <label for="location">Location</label>
-        <input type="text" id="location" placeholder="New York, NY">
+        <input type="text" id="location" placeholder="New York, NY, USA">
       </div>
       <div class="form-group">
         <label for="linkedin">LinkedIn URL</label>
@@ -60,120 +55,77 @@
         <input type="url" id="github" placeholder="https://github.com/johndoe">
       </div>
       <div class="form-group">
-        <label for="portfolio">Portfolio URL</label>
+        <label for="portfolio">Portfolio/Website</label>
         <input type="url" id="portfolio" placeholder="https://johndoe.com">
       </div>
       <div class="form-group">
         <label for="currentCompany">Current Company</label>
         <input type="text" id="currentCompany" placeholder="Acme Corp">
       </div>
+      <div class="form-group">
+        <label for="currentTitle">Current Title</label>
+        <input type="text" id="currentTitle" placeholder="Software Engineer">
+      </div>
+      <div class="form-group">
+        <label for="yearsExperience">Years of Experience</label>
+        <input type="number" id="yearsExperience" placeholder="5" min="0" max="50">
+      </div>
       
       <div class="file-upload-section">
-        <h3>Resume</h3>
-        <div class="file-upload" id="resumeUpload">
+        <h3>📎 Resume (PDF or DOCX)</h3>
+        <div class="file-upload">
           <input type="file" id="resumeFile" accept=".pdf,.doc,.docx">
-          <label for="resumeFile">
-            <span class="upload-icon">📎</span>
-            <span class="upload-text">Click to upload resume</span>
+          <label for="resumeFile" class="file-label">
+            <span id="resumeFileName">Click to upload resume</span>
           </label>
-          <span class="file-name" id="resumeFileName"></span>
         </div>
       </div>
 
-      <div class="file-upload-section">
-        <h3>Cover Letter (Optional)</h3>
-        <div class="file-upload" id="coverLetterUpload">
-          <input type="file" id="coverLetterFile" accept=".pdf,.doc,.docx">
-          <label for="coverLetterFile">
-            <span class="upload-icon">📎</span>
-            <span class="upload-text">Click to upload cover letter</span>
-          </label>
-          <span class="file-name" id="coverLetterFileName"></span>
-        </div>
-      </div>
-
-      <button class="btn btn-primary" id="saveProfile">Save Profile</button>
+      <button class="btn btn-primary" id="saveProfile">💾 Save Profile</button>
+      <div id="saveStatus" class="status-message"></div>
     </div>
 
     <!-- Apply Tab -->
     <div class="tab-content" id="apply-tab">
-      <div class="current-page-info" id="pageInfo">
+      <div class="current-page-info">
         <h3>Current Page</h3>
-        <p class="page-url" id="currentUrl">Not on ATS page</p>
-        <p class="platform-badge" id="platformBadge">Unknown</p>
-      </div>
-
-      <div class="form-group">
-        <label for="jobUrl">Job URL</label>
-        <input type="url" id="jobUrl" placeholder="Paste job application URL">
-        <button class="btn btn-small" id="useCurrentUrl">Use Current</button>
+        <p id="currentUrl" class="url-text">No page detected</p>
+        <div id="platformInfo" class="platform-info">
+          <span class="platform-label">Platform:</span>
+          <span id="detectedPlatform" class="platform-name">Unknown</span>
+        </div>
       </div>
 
       <div class="action-buttons">
-        <button class="btn btn-primary" id="detectFields">Detect Fields</button>
-        <button class="btn btn-secondary" id="fillForm">Fill Form</button>
-        <button class="btn btn-success" id="submitApplication">Submit</button>
+        <button class="btn btn-primary btn-large" id="fillForm">
+          ✨ Auto-Fill Form
+        </button>
+        <button class="btn btn-secondary" id="refreshStatus">
+          🔄 Refresh Status
+        </button>
       </div>
 
-      <div class="detected-fields" id="detectedFields">
-        <h3>Detected Fields</h3>
-        <ul id="fieldsList"></ul>
+      <div id="fillStatus" class="status-message"></div>
+
+      <div class="help-section">
+        <h4>Supported Platforms:</h4>
+        <ul class="platform-list">
+          <li>✅ Lever (jobs.lever.co)</li>
+          <li>✅ Greenhouse (boards.greenhouse.io)</li>
+          <li>✅ Workday (myworkdayjobs.com)</li>
+          <li>✅ Glassdoor Applications</li>
+        </ul>
       </div>
 
-      <div class="application-status" id="applicationStatus">
-        <h3>Status</h3>
-        <div class="status-message" id="statusMessage">Ready to apply</div>
-      </div>
-    </div>
-
-    <!-- Settings Tab -->
-    <div class="tab-content" id="settings-tab">
-      <div class="form-group">
-        <label for="serverUrl">Server URL</label>
-        <input type="url" id="serverUrl" value="http://localhost:3000">
-      </div>
-      <div class="form-group">
-        <label for="wsUrl">WebSocket URL</label>
-        <input type="url" id="wsUrl" value="ws://localhost:3001">
-      </div>
-      
-      <div class="toggle-group">
-        <label class="toggle">
-          <input type="checkbox" id="autoFill" checked>
-          <span class="toggle-slider"></span>
-          <span class="toggle-label">Auto-fill forms</span>
-        </label>
-      </div>
-      
-      <div class="toggle-group">
-        <label class="toggle">
-          <input type="checkbox" id="autoSubmit">
-          <span class="toggle-slider"></span>
-          <span class="toggle-label">Auto-submit (careful!)</span>
-        </label>
-      </div>
-
-      <div class="toggle-group">
-        <label class="toggle">
-          <input type="checkbox" id="notifySuccess" checked>
-          <span class="toggle-slider"></span>
-          <span class="toggle-label">Notify on success</span>
-        </label>
-      </div>
-
-      <button class="btn btn-primary" id="saveSettings">Save Settings</button>
-      <button class="btn btn-secondary" id="connectServer">Connect to Server</button>
-      <button class="btn btn-danger" id="clearData">Clear All Data</button>
-    </div>
-
-    <!-- Logs Tab -->
-    <div class="tab-content" id="logs-tab">
-      <div class="logs-header">
-        <h3>Activity Logs</h3>
-        <button class="btn btn-small" id="clearLogs">Clear</button>
-      </div>
-      <div class="logs-container" id="logsContainer">
-        <p class="log-empty">No activity yet</p>
+      <div class="instructions">
+        <h4>How to use:</h4>
+        <ol>
+          <li>Fill in your profile on the Profile tab</li>
+          <li>Upload your resume</li>
+          <li>Navigate to a job application page</li>
+          <li>Click "Auto-Fill Form"</li>
+          <li>Review and submit manually</li>
+        </ol>
       </div>
     </div>
   </div>

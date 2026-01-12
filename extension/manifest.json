@@ -7,64 +7,29 @@
     "activeTab",
     "storage",
     "tabs",
-    "scripting",
-    "webNavigation",
-    "cookies",
-    "alarms"
+    "scripting"
   ],
   "host_permissions": [
     "https://jobs.lever.co/*",
     "https://*.lever.co/*",
     "https://*.greenhouse.io/*",
     "https://*.myworkdayjobs.com/*",
-    "https://*.glassdoor.com/*",
-    "https://*.smartrecruiters.com/*",
-    "https://*.icims.com/*",
-    "https://*.taleo.net/*",
-    "http://localhost:3000/*",
-    "http://localhost:3001/*"
+    "https://*.glassdoor.com/*"
   ],
   "background": {
-    "service_worker": "background.js",
-    "type": "module"
+    "service_worker": "background.js"
   },
   "content_scripts": [
     {
       "matches": [
         "https://jobs.lever.co/*",
-        "https://*.lever.co/*"
-      ],
-      "js": ["content-scripts/lever.js"],
-      "css": ["styles/overlay.css"],
-      "run_at": "document_idle"
-    },
-    {
-      "matches": [
-        "https://*.greenhouse.io/*"
-      ],
-      "js": ["content-scripts/greenhouse.js"],
-      "css": ["styles/overlay.css"],
-      "run_at": "document_idle"
-    },
-    {
-      "matches": [
-        "https://*.myworkdayjobs.com/*"
-      ],
-      "js": ["content-scripts/workday.js"],
-      "css": ["styles/overlay.css"],
-      "run_at": "document_idle"
-    },
-    {
-      "matches": [
+        "https://*.lever.co/*",
+        "https://*.greenhouse.io/*",
+        "https://*.myworkdayjobs.com/*",
         "https://*.glassdoor.com/*"
       ],
-      "js": ["content-scripts/glassdoor.js"],
-      "css": ["styles/overlay.css"],
-      "run_at": "document_idle"
-    },
-    {
-      "matches": ["<all_urls>"],
       "js": ["content-scripts/common.js"],
+      "css": ["styles/overlay.css"],
       "run_at": "document_idle"
     }
   ],
@@ -82,11 +47,5 @@
     "32": "icons/icon32.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
-  },
-  "web_accessible_resources": [
-    {
-      "resources": ["styles/*", "icons/*"],
-      "matches": ["<all_urls>"]
-    }
-  ]
+  }
 }
